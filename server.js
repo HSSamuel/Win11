@@ -23,7 +23,7 @@ const db = getFirestore();
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const APP_SECRET = "Win11PCLauncherSecret"; 
-const FLW_SECRET_HASH = process.env.FLW_SECRET_HASH || "win11_custom_hash_123";
+const FLW_SECRET_HASH = process.env.FLW_SECRET_HASH || "win11_custom_hash2026";
 
 app.post("/flutterwave", async (req, res) => {
     const signature = req.headers['verif-hash'] || req.headers['flutterwave-signature'];
@@ -58,17 +58,17 @@ app.post("/flutterwave", async (req, res) => {
             last_reset_date: null
         });
 
-        // Send email via Resend HTTP API
+        // Send email via Resend
         try {
             await resend.emails.send({
-                from: 'Win11 PC Launcher <onboarding@resend.dev>', // Update this once you verify a custom domain
+                from: 'Win11 PC Launcher <noreply@asconalumni.org>',
                 to: email, 
                 subject: 'Your Win11 PC Launcher Pro License Key',
                 text: `Thank you for your purchase!\n\nYour Installation ID: ${installationId}\nYour Product Key: ${productKey}\n\nPlease keep this key secure and enter it into the launcher to activate Pro features.`
             });
             console.log(`License emailed successfully to ${email}`);
         } catch (error) {
-            console.error("Failed to send email:", error);
+            console.error("Failed to send email via Resend:", error);
         }
     }
 
@@ -76,4 +76,4 @@ app.post("/flutterwave", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
