@@ -52,7 +52,16 @@ app.post("/flutterwave", async (req, res) => {
 
             // Ensure the transaction was genuinely successful
             if (verifyData.status === "success" && verifyData.data.status === "successful") {
-                const actualEmail = verifyData.data.customer.email;
+                let actualEmail = verifyData.data.customer.email;
+
+                // Strip Flutterwave's 'ravesb_' proxy mask to get the real email
+                if (actualEmail.startsWith('ravesb_')) {
+                    const parts = actualEmail.split('_');
+                    if (parts.length >= 3) {
+                        actualEmail = parts.slice(2).join('_'); 
+                    }
+                }
+                
                 const meta = verifyData.data.meta || {};
                 
                 // Check for the ID (Flutterwave sometimes forces lowercase)
@@ -82,15 +91,22 @@ app.post("/flutterwave", async (req, res) => {
                     last_reset_date: null
                 });
 
+                // Check what the exact email string is before sending
+                console.log("Attempting to deliver license to exactly:", actualEmail);
+
                 // Send Email via Resend
-                await resend.emails.send({
-                    from: 'Win11 PC Launcher <noreply@asconalumni.org>', // Change to your custom domain when verified
-                    to: actualEmail,
-                    subject: 'Your Win11 PC Launcher Pro License Key',
-                    text: `Thank you for your purchase!\n\nYour Installation ID: ${installationId}\nYour Product Key: ${productKey}\n\nPlease keep this key secure and enter it into the launcher to activate Pro features.`
-                });
-                
-                console.log(`License generated and emailed successfully to ${actualEmail}`);
+                try {
+                    await resend.emails.send({
+                        from: 'Win11 PC Launcher <noreply@asconalumni.org>', 
+                        to: actualEmail,
+                        subject: 'Your Win11 PC Launcher Pro License Key',
+                        text: `Thank you for your purchase!\n\nYour Installation ID: ${installationId}\nYour Product Key: ${productKey}\n\nPlease keep this key secure and enter it into the launcher to activate Pro features.`
+                    });
+                    
+                    console.log(`License generated and emailed successfully to ${actualEmail}`);
+                } catch (emailError) {
+                    console.error("Failed to send email via Resend:", emailError);
+                }
             }
         } catch (error) {
             console.error("Verification API failed:", error);
