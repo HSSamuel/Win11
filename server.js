@@ -33,46 +33,67 @@ app.post("/flutterwave", async (req, res) => {
     }
 
     const payload = req.body;
-    console.log("FLUTTERWAVE PAYLOAD:", JSON.stringify(payload.data, null, 2));
 
     if (payload.event === 'charge.completed' && payload.data.status === 'successful') {
-        const email = payload.data.customer.email;
-        const transactionId = payload.data.tx_ref;
-        const installationId = payload.data.meta?.['Your Installation ID'];
+        const transactionId = payload.data.id; // The numeric ID to verify
+        const txRef = payload.data.tx_ref; 
 
-if (!installationId) {
-    console.error("Payment received, but Installation ID is missing. Transaction:", transactionId);
-    return res.status(400).send('Missing Installation ID');
-}
-
-        const rawString = `${installationId}_${APP_SECRET}`;
-        const productKey = crypto.createHash('sha256')
-                                 .update(rawString)
-                                 .digest('hex')
-                                 .substring(0, 16)
-                                 .toUpperCase();
-
-        await db.collection("licenses").doc(transactionId).set({
-            transaction_id: transactionId,
-            email: email,
-            installation_id: installationId,
-            product_key: productKey,
-            reset_count: 0,
-            created_at: FieldValue.serverTimestamp(),
-            last_reset_date: null
-        });
-
-        // Send email via Resend
         try {
-            await resend.emails.send({
-                from: 'Win11 PC Launcher <noreply@asconalumni.org>',
-                to: email, 
-                subject: 'Your Win11 PC Launcher Pro License Key',
-                text: `Thank you for your purchase!\n\nYour Installation ID: ${installationId}\nYour Product Key: ${productKey}\n\nPlease keep this key secure and enter it into the launcher to activate Pro features.`
+            // Ask Flutterwave for the complete, unmasked transaction data
+            const verifyResponse = await fetch(`https://api.flutterwave.com/v3/transactions/${transactionId}/verify`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${process.env.FLW_SECRET_KEY}`,
+                    'Content-Type': 'application/json'
+                }
             });
-            console.log(`License emailed successfully to ${email}`);
+            
+            const verifyData = await verifyResponse.json();
+
+            // Ensure the transaction was genuinely successful
+            if (verifyData.status === "success" && verifyData.data.status === "successful") {
+                const actualEmail = verifyData.data.customer.email;
+                const meta = verifyData.data.meta || {};
+                
+                // Check for the ID (Flutterwave sometimes forces lowercase)
+                const installationId = meta['Your Installation ID'] || meta['your_installation_id'];
+
+                if (!installationId) {
+                    console.error("Missing Installation ID in Meta:", meta);
+                    return res.status(400).send('Missing Installation ID');
+                }
+
+                // Generate Product Key
+                const rawString = `${installationId}_${APP_SECRET}`;
+                const productKey = crypto.createHash('sha256')
+                                         .update(rawString)
+                                         .digest('hex')
+                                         .substring(0, 16)
+                                         .toUpperCase();
+
+                // Save to Database
+                await db.collection("licenses").doc(txRef).set({
+                    transaction_id: txRef,
+                    email: actualEmail,
+                    installation_id: installationId,
+                    product_key: productKey,
+                    reset_count: 0,
+                    created_at: FieldValue.serverTimestamp(),
+                    last_reset_date: null
+                });
+
+                // Send Email via Resend
+                await resend.emails.send({
+                    from: 'Win11 PC Launcher <noreply@asconalumni.org>', // Change to your custom domain when verified
+                    to: actualEmail,
+                    subject: 'Your Win11 PC Launcher Pro License Key',
+                    text: `Thank you for your purchase!\n\nYour Installation ID: ${installationId}\nYour Product Key: ${productKey}\n\nPlease keep this key secure and enter it into the launcher to activate Pro features.`
+                });
+                
+                console.log(`License generated and emailed successfully to ${actualEmail}`);
+            }
         } catch (error) {
-            console.error("Failed to send email via Resend:", error);
+            console.error("Verification API failed:", error);
         }
     }
 
