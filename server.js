@@ -37,9 +37,12 @@ app.post("/flutterwave", async (req, res) => {
     if (payload.event === 'charge.completed' && payload.data.status === 'successful') {
         const email = payload.data.customer.email;
         const transactionId = payload.data.tx_ref;
-        const installationId = payload.data.meta['Your Installation ID'];
+        const installationId = payload.data.meta?.['Your Installation ID'];
 
-        if (!installationId) return res.status(400).send('Missing Installation ID');
+if (!installationId) {
+    console.error("Payment received, but Installation ID is missing. Transaction:", transactionId);
+    return res.status(400).send('Missing Installation ID');
+}
 
         const rawString = `${installationId}_${APP_SECRET}`;
         const productKey = crypto.createHash('sha256')
