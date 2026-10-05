@@ -3,7 +3,7 @@ fetch('http://localhost:3000/flutterwave', {
     headers: {
         'Content-Type': 'application/json',
         // This must match the FLW_SECRET_HASH in your .env file
-        'verif-hash': 'win11_custom_hash_123' 
+        'verif-hash': 'win11_custom_hash2026' 
     },
     body: JSON.stringify({
         event: 'charge.completed',

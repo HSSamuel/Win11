@@ -25,7 +25,7 @@ const db = getFirestore();
 
 // Match this to the secret in your Flutter app
 const APP_SECRET = "Win11PCLauncherSecret"; 
-const FLW_SECRET_HASH = process.env.FLW_SECRET_HASH || "win11_custom_hash_123";
+const FLW_SECRET_HASH = process.env.FLW_SECRET_HASH || "win11_custom_hash2026";
 
 app.post("/flutterwave", async (req, res) => {
     const signature = req.headers['verif-hash'] || req.headers['flutterwave-signature'];
