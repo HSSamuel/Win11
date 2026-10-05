@@ -33,6 +33,7 @@ app.post("/flutterwave", async (req, res) => {
     }
 
     const payload = req.body;
+    console.log("FLUTTERWAVE PAYLOAD:", JSON.stringify(payload.data, null, 2));
 
     if (payload.event === 'charge.completed' && payload.data.status === 'successful') {
         const email = payload.data.customer.email;
