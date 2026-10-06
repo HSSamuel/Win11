@@ -35,10 +35,19 @@ app.post("/flutterwave", async (req, res) => {
     const payload = req.body;
 
     if (payload.event === 'charge.completed' && payload.data.status === 'successful') {
-        const transactionId = payload.data.id; // The numeric ID to verify
+        const transactionId = String(payload.data.id); // Guard against mixed integer/string payloads
         const txRef = payload.data.tx_ref; 
 
         try {
+            // Idempotency check: prevent processing the same transaction multiple times
+            const docRef = db.collection("licenses").doc(txRef);
+            const docSnap = await docRef.get();
+            
+            if (docSnap.exists) {
+                console.log(`Transaction ${txRef} already processed. Acknowledging webhook.`);
+                return res.sendStatus(200);
+            }
+
             // Ask Flutterwave for the complete, unmasked transaction data
             const verifyResponse = await fetch(`https://api.flutterwave.com/v3/transactions/${transactionId}/verify`, {
                 method: 'GET',
@@ -48,6 +57,12 @@ app.post("/flutterwave", async (req, res) => {
                 }
             });
             
+            // Safe JSON parsing: prevent HTML/502 errors from crashing the route
+            if (!verifyResponse.ok) {
+                console.error("Flutterwave API returned HTTP", verifyResponse.status);
+                return res.sendStatus(500); // Trigger a retry from Flutterwave
+            }
+
             const verifyData = await verifyResponse.json();
 
             // Ensure the transaction was genuinely successful
@@ -80,8 +95,8 @@ app.post("/flutterwave", async (req, res) => {
                                          .substring(0, 16)
                                          .toUpperCase();
 
-                // Save to Database
-                await db.collection("licenses").doc(txRef).set({
+                // Save to Database first to secure the state
+                await docRef.set({
                     transaction_id: txRef,
                     email: actualEmail,
                     installation_id: installationId,
@@ -106,10 +121,12 @@ app.post("/flutterwave", async (req, res) => {
                     console.log(`License generated and emailed successfully to ${actualEmail}`);
                 } catch (emailError) {
                     console.error("Failed to send email via Resend:", emailError);
+                    // We still return 200 to Flutterwave because payment succeeded and DB is updated securely
                 }
             }
         } catch (error) {
             console.error("Verification API failed:", error);
+            return res.sendStatus(500); // Trigger a retry for unexpected errors
         }
     }
 
@@ -152,15 +169,7 @@ app.post("/reset-license", async (req, res) => {
                                      .substring(0, 16)
                                      .toUpperCase();
 
-        // 4. Update the Firestore record
-        await doc.ref.update({
-            installation_id: newInstallationId,
-            product_key: newProductKey,
-            reset_count: currentResetCount + 1,
-            last_reset_date: FieldValue.serverTimestamp()
-        });
-
-        // 5. Email the updated key to the customer's original email
+        // 4. Email the updated key FIRST to prevent DB updates causing a "black hole"
         try {
             await resend.emails.send({
                 from: 'Win11 PC Launcher <noreply@asconalumni.org>',
@@ -170,7 +179,16 @@ app.post("/reset-license", async (req, res) => {
             });
         } catch (emailErr) {
             console.error("Failed to email updated key:", emailErr);
+            return res.status(500).json({ error: "Failed to dispatch email. Reset aborted to prevent lock-out." });
         }
+
+        // 5. Update the Firestore record ONLY after successful email dispatch
+        await doc.ref.update({
+            installation_id: newInstallationId,
+            product_key: newProductKey,
+            reset_count: currentResetCount + 1,
+            last_reset_date: FieldValue.serverTimestamp()
+        });
 
         console.log(`License transferred to PC: ${newInstallationId}. Reset count: ${currentResetCount + 1}`);
 
