@@ -35,7 +35,7 @@ app.post("/flutterwave", async (req, res) => {
     const payload = req.body;
 
     if (payload.event === 'charge.completed' && payload.data.status === 'successful') {
-        const transactionId = String(payload.data.id); // Guard against mixed integer/string payloads
+        const transactionId = String(payload.data.id); 
         const txRef = payload.data.tx_ref; 
 
         try {
@@ -67,6 +67,26 @@ app.post("/flutterwave", async (req, res) => {
 
             // Ensure the transaction was genuinely successful
             if (verifyData.status === "success" && verifyData.data.status === "successful") {
+                
+                // CRITICAL FIX: Dual-Currency Financial Validation
+                const currency = verifyData.data.currency;
+                const amount = verifyData.data.amount;
+
+                const EXPECTED_NGN = 12000;
+                const EXPECTED_USD = 10;
+
+                let isValidAmount = false;
+                if (currency === "NGN" && amount >= EXPECTED_NGN) {
+                    isValidAmount = true;
+                } else if (currency === "USD" && amount >= EXPECTED_USD) {
+                    isValidAmount = true;
+                }
+
+                if (!isValidAmount) {
+                    console.error(`Invalid payment amount or currency! Expected >= ${EXPECTED_NGN} NGN or >= ${EXPECTED_USD} USD, but got ${amount} ${currency}`);
+                    return res.status(400).send('Invalid payment amount or currency');
+                }
+
                 let actualEmail = verifyData.data.customer.email;
 
                 // Strip Flutterwave's 'ravesb_' proxy mask to get the real email
@@ -102,11 +122,12 @@ app.post("/flutterwave", async (req, res) => {
                     installation_id: installationId,
                     product_key: productKey,
                     reset_count: 0,
+                    currency: currency,
+                    amount_paid: amount,
                     created_at: FieldValue.serverTimestamp(),
                     last_reset_date: null
                 });
 
-                // Check what the exact email string is before sending
                 console.log("Attempting to deliver license to exactly:", actualEmail);
 
                 // Send Email via Resend
@@ -121,7 +142,7 @@ app.post("/flutterwave", async (req, res) => {
                     console.log(`License generated and emailed successfully to ${actualEmail}`);
                 } catch (emailError) {
                     console.error("Failed to send email via Resend:", emailError);
-                    // We still return 200 to Flutterwave because payment succeeded and DB is updated securely
+                    // Return 200 to Flutterwave because payment succeeded and DB is updated securely
                 }
             }
         } catch (error) {
